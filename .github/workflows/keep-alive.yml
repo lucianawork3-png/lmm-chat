@@ -1,0 +1,17 @@
+name: Keep app awake
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping app
+        run: |
+          curl -sL -c /tmp/cookies.txt -b /tmp/cookies.txt --max-time 60 \
+            -A "Mozilla/5.0 (keep-alive-ping)" \
+            "https://lmm-chat-f3qmntr5ekqne2pv5zgmox.streamlit.app/" \
+            -o /dev/null -w "status: %{http_code}\n"

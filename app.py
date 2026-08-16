@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env", override=True)
 
-st.set_page_config(page_title="LMM", page_icon="📅", layout="centered")
+st.set_page_config(page_title="LMM Chat", page_icon="📅", layout="centered")
 
 
 # ── Mode picker ──────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ if "mode" not in st.session_state:
 
 
 def show_picker():
-    st.title("LMM")
+    st.title("LMM Chat")
     st.caption("What do you want to do?")
     col1, col2 = st.columns(2)
     with col1:
