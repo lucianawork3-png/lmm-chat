@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import streamlit as st
 
 import notion_tasks
@@ -17,6 +19,17 @@ def reset_wizard():
     st.session_state.task_action = None
     st.session_state.task_destination = None
     st.session_state.task_target = None
+    st.session_state.task_new_title = None
+
+
+def finish_add(dest: str, title: str, due_date: str | None):
+    notion_tasks.add_task(dest, title, due_date)
+    log(
+        f"Done! Added **{title}** to *{dest_label(dest)}*"
+        + (f" (due: {due_date})." if due_date else " (no deadline).")
+    )
+    reset_wizard()
+    st.rerun()
 
 
 def render():
@@ -28,6 +41,8 @@ def render():
         st.session_state.task_destination = None
     if "task_target" not in st.session_state:
         st.session_state.task_target = None
+    if "task_new_title" not in st.session_state:
+        st.session_state.task_new_title = None
 
     with st.sidebar:
         st.title("✅ Tasks")
@@ -85,22 +100,28 @@ def render():
                 if st.button(dest_label(key), key=f"pick_dest_{key}", use_container_width=True):
                     st.session_state.task_destination = key
                     st.rerun()
+        elif st.session_state.task_new_title is None:
+            dest = st.session_state.task_destination
+            st.markdown(f"**Adding to _{dest_label(dest)}_ — what's the task?**")
+            title = st.text_input("Task", key="add_title_input", placeholder="e.g. Call the accountant")
+            if st.button("Next ›", key="add_title_next", disabled=not title.strip()):
+                st.session_state.task_new_title = title.strip()
+                st.rerun()
         else:
             dest = st.session_state.task_destination
-            st.markdown(f"**Adding to _{dest_label(dest)}_**")
-            title = st.text_input("Task", key="add_title_input", placeholder="e.g. Call the accountant")
-            has_due = st.checkbox("Set a due date", key="add_due_checkbox")
-            due_date = None
-            if has_due:
-                due_date = st.date_input("Due date", key="add_due_date_input").isoformat()
-            if st.button("✅ Add it", key="add_confirm", disabled=not title.strip()):
-                notion_tasks.add_task(dest, title.strip(), due_date)
-                log(
-                    f"Done! Added **{title.strip()}** to *{dest_label(dest)}*"
-                    + (f" (due: {due_date})." if due_date else ".")
-                )
-                reset_wizard()
-                st.rerun()
+            title = st.session_state.task_new_title
+            st.markdown(f"**What's the deadline for “{title}”?**")
+            c1, c2, c3 = st.columns(3)
+            if c1.button("No deadline", key="due_none", use_container_width=True):
+                finish_add(dest, title, None)
+            if c2.button("Today", key="due_today", use_container_width=True):
+                finish_add(dest, title, date.today().isoformat())
+            if c3.button("Tomorrow", key="due_tomorrow", use_container_width=True):
+                finish_add(dest, title, (date.today() + timedelta(days=1)).isoformat())
+            st.caption("Or pick a specific date:")
+            picked = st.date_input("Date", key="add_due_date_input")
+            if st.button("Use this date", key="add_use_date"):
+                finish_add(dest, title, picked.isoformat())
 
     elif action in ("complete", "reschedule", "rename"):
         if st.session_state.task_target is None:
