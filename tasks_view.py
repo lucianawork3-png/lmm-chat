@@ -8,7 +8,8 @@ import notion_tasks
 
 
 def dest_label(key: str) -> str:
-    return notion_tasks.DESTINATIONS[key]["label"]
+    dest = notion_tasks.DESTINATIONS[key]
+    return f"{dest['icon']} {dest['label']}"
 
 
 def log(text: str):

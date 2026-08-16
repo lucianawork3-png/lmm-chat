@@ -13,18 +13,20 @@ import streamlit as st
 from notion_client import Client
 
 DESTINATIONS = {
-    "personal": {
-        "label": "Personal TO DO",
-        "data_source_id": "d5c717a4-1e2b-4326-b70f-74397c0ddc72",
-        "title_prop": "Task",
+    "on_demand": {
+        "label": "LvR ON DEMAND",
+        "icon": "⏯️",
+        "data_source_id": "e881e33b-d488-83fd-94e2-873ca72fe93a",
+        "title_prop": "Name",
         "status_prop": "Status",
-        "status_type": "select",
-        "todo_value": "To Do",
+        "status_type": "status",
+        "todo_value": "ON Demand",
         "done_value": "Done",
-        "date_prop": "Due Date",
+        "date_prop": "Date",
     },
     "gathering": {
         "label": "LvR Mentoring Gathering",
+        "icon": "🙂",
         "data_source_id": "abc7ca7f-2a51-41d0-ac62-594cddc98226",
         "title_prop": "Task",
         "status_prop": "Status",
@@ -33,15 +35,16 @@ DESTINATIONS = {
         "done_value": "Done",
         "date_prop": "Due Date",
     },
-    "on_demand": {
-        "label": "LvR ON DEMAND",
-        "data_source_id": "e881e33b-d488-83fd-94e2-873ca72fe93a",
-        "title_prop": "Name",
+    "personal": {
+        "label": "Personal TO DO",
+        "icon": "🙅‍♀️",
+        "data_source_id": "d5c717a4-1e2b-4326-b70f-74397c0ddc72",
+        "title_prop": "Task",
         "status_prop": "Status",
-        "status_type": "status",
-        "todo_value": "ON Demand",
+        "status_type": "select",
+        "todo_value": "To Do",
         "done_value": "Done",
-        "date_prop": "Date",
+        "date_prop": "Due Date",
     },
 }
 
@@ -98,7 +101,7 @@ def list_open_tasks() -> list[dict]:
             due_date = date_val["start"] if date_val else None
             tasks.append({
                 "dest": dest_key,
-                "dest_label": dest["label"],
+                "dest_label": f"{dest['icon']} {dest['label']}",
                 "page_id": page["id"],
                 "title": title,
                 "due_date": due_date,
