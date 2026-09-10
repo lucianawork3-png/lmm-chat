@@ -39,6 +39,65 @@ def finish_add(dest: str, title: str, due_date: str | None):
     st.rerun()
 
 
+def _date_only(due_date: str | None) -> str | None:
+    return due_date[:10] if due_date else None
+
+
+def render_daily_plan():
+    st.subheader("📋 Today's Focus")
+    today_iso = date.today().isoformat()
+
+    try:
+        tasks = notion_tasks.list_open_tasks()
+    except Exception as e:
+        st.error(f"Couldn't load tasks: {e}")
+        return
+
+    if not tasks:
+        st.caption("No open tasks. 🎉")
+        return
+
+    def section(label: str, group: list[dict]):
+        if not group:
+            return
+        st.markdown(f"**{label}**")
+        for t in group:
+            key = f"today_pick_{t['page_id']}"
+            default_checked = (_date_only(t["due_date"]) or "9999") <= today_iso
+            cols = st.columns([0.08, 0.72, 0.2])
+            cols[0].checkbox("", value=default_checked, key=key, label_visibility="collapsed")
+            due = f" · due {t['due_date']}" if t["due_date"] else ""
+            cols[1].markdown(f"{t['dest_label']} — {t['title']}{due}")
+            if cols[2].button("✓ Done", key=f"today_done_{t['page_id']}", use_container_width=True):
+                notion_tasks.complete_task(t["dest"], t["page_id"])
+                st.rerun()
+
+    overdue = [t for t in tasks if (_date_only(t["due_date"]) or today_iso) < today_iso]
+    due_today = [t for t in tasks if _date_only(t["due_date"]) == today_iso]
+    upcoming = [t for t in tasks if (_date_only(t["due_date"]) or today_iso) > today_iso]
+    no_date = [t for t in tasks if not t["due_date"]]
+
+    section("⏰ Overdue", overdue)
+    section("📌 Due today", due_today)
+    section("🗓️ Upcoming", upcoming)
+    section("— No date", no_date)
+
+    st.divider()
+    selected = [t for t in tasks if st.session_state.get(f"today_pick_{t['page_id']}")]
+    st.caption(f"{len(selected)} task(s) selected for today.")
+    if st.button(
+        "✅ Set selected as today's focus", key="commit_today_plan",
+        type="primary", disabled=not selected,
+    ):
+        updated = 0
+        for t in selected:
+            if _date_only(t["due_date"]) != today_iso:
+                notion_tasks.reschedule_task(t["dest"], t["page_id"], today_iso)
+                updated += 1
+        st.success(f"Set {updated} task(s) due today." if updated else "Selection already matches today's due date.")
+        st.rerun()
+
+
 def render():
     if "task_messages" not in st.session_state:
         st.session_state.task_messages = []
@@ -72,6 +131,27 @@ def render():
             st.session_state.task_messages = []
             reset_wizard()
             st.rerun()
+
+    if "task_view_mode" not in st.session_state:
+        st.session_state.task_view_mode = "plan"
+
+    toggle_plan, toggle_manage = st.columns(2)
+    if toggle_plan.button(
+        "📋 Plan my day", key="task_view_plan_btn", use_container_width=True,
+        type="primary" if st.session_state.task_view_mode == "plan" else "secondary",
+    ):
+        st.session_state.task_view_mode = "plan"
+        st.rerun()
+    if toggle_manage.button(
+        "🛠️ Manage tasks", key="task_view_manage_btn", use_container_width=True,
+        type="primary" if st.session_state.task_view_mode == "manage" else "secondary",
+    ):
+        st.session_state.task_view_mode = "manage"
+        st.rerun()
+
+    if st.session_state.task_view_mode == "plan":
+        render_daily_plan()
+        return
 
     for msg in st.session_state.task_messages:
         with st.chat_message("assistant"):
