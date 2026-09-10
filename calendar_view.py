@@ -276,8 +276,6 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today,
 
 
 def render_week_grid(calendars: list[dict], cycle_stats: dict):
-    st.subheader("🗓️ Week")
-
     today = datetime.now(LISBON_TZ).date()
     if "cal_week_cursor" not in st.session_state:
         diff = (today.weekday() + 1) % 7  # days since last Sunday
@@ -345,20 +343,21 @@ def render_week_grid(calendars: list[dict], cycle_stats: dict):
                 st.session_state.cal_editing_event = matched
                 st.rerun()
 
-    st.divider()
-    st.markdown("**This week's events**")
-    week_events = sorted(events, key=lambda e: e["start"])
-    if not week_events:
-        st.caption("No events this week.")
-    for ev in week_events:
-        dt = _parse_dt(ev["start"])
-        if dt is None:
-            continue
-        when = dt.strftime("%a %H:%M") if "T" in ev["start"] else f"{dt.strftime('%a')} (all day)"
-        label = f"{when} · {ev['title']}"
-        if st.button(label, key=f"cal_event_btn_{ev['id']}", use_container_width=True):
-            st.session_state.cal_editing_event = ev
-            st.rerun()
+    with st.sidebar:
+        st.divider()
+        st.markdown(f"**{week_start.strftime('%d %b')} – {week_end.strftime('%d %b')}**")
+        week_events = sorted(events, key=lambda e: e["start"])
+        if not week_events:
+            st.caption("No events this week.")
+        for ev in week_events:
+            dt = _parse_dt(ev["start"])
+            if dt is None:
+                continue
+            when = dt.strftime("%a %H:%M") if "T" in ev["start"] else f"{dt.strftime('%a')} (all day)"
+            label = f"{when} · {ev['title']}"
+            if st.button(label, key=f"cal_event_btn_{ev['id']}", use_container_width=True):
+                st.session_state.cal_editing_event = ev
+                st.rerun()
 
     if st.session_state.get("cal_editing_event"):
         render_event_editor(st.session_state.cal_editing_event)
@@ -496,6 +495,11 @@ def render():
         else:
             st.error("No calendars loaded. Check credentials in .env")
 
+    if not calendars and st.button("‹ Back", key="cal_back_no_cal"):
+        st.session_state.mode = None
+        st.rerun()
+
+    with st.sidebar:
         st.divider()
         render_cycle_sidebar()
 
@@ -513,7 +517,10 @@ def render():
     if calendars:
         if st.session_state.get("cal_view_mode") not in ("List", "Week"):
             st.session_state.cal_view_mode = "List"
-        toggle_list, toggle_week = st.columns(2)
+        back_col, toggle_list, toggle_week = st.columns([1, 2, 2])
+        if back_col.button("‹ Back", key="cal_back"):
+            st.session_state.mode = None
+            st.rerun()
         if toggle_list.button(
             "List", key="cal_view_list_btn", use_container_width=True,
             type="primary" if st.session_state.cal_view_mode == "List" else "secondary",

@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent / ".env", override=True)
 
 st.set_page_config(page_title="LMM Chat", page_icon="📅", layout="centered")
+st.markdown("<style>.block-container{padding-top:2rem;padding-bottom:1rem;}</style>", unsafe_allow_html=True)
 
 
 # ── Mode picker ──────────────────────────────────────────────────────────────
@@ -37,9 +38,10 @@ if st.session_state.mode is None:
     show_picker()
     st.stop()
 
-if st.button("‹ Back"):
-    st.session_state.mode = None
-    st.rerun()
+if st.session_state.mode != "calendar":
+    if st.button("‹ Back"):
+        st.session_state.mode = None
+        st.rerun()
 
 if st.session_state.mode == "calendar":
     import calendar_view
