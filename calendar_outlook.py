@@ -67,6 +67,30 @@ def list_upcoming(calendar_id: str = "primary", max_results: int = 10) -> list[d
     ]
 
 
+def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int = 250) -> list[dict]:
+    url = (
+        f"{GRAPH_BASE}/me/calendars/{calendar_id}/events"
+        if calendar_id != "primary"
+        else f"{GRAPH_BASE}/me/events"
+    )
+    params = {
+        "$top": max_results,
+        "$orderby": "start/dateTime",
+        "$filter": f"start/dateTime ge '{time_min}' and start/dateTime le '{time_max}'",
+        "$select": "subject,start,end,location",
+    }
+    resp = requests.get(url, headers=_headers(), params=params)
+    resp.raise_for_status()
+    return [
+        {
+            "title": e.get("subject", "(no title)"),
+            "start": e["start"]["dateTime"],
+            "location": e.get("location", {}).get("displayName"),
+        }
+        for e in resp.json().get("value", [])
+    ]
+
+
 def create_event(event_dict: dict) -> str:
     calendar_id = event_dict.get("calendar_id", "primary")
     url = (

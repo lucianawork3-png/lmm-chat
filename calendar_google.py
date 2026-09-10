@@ -70,6 +70,31 @@ def list_upcoming(calendar_id: str = "primary", max_results: int = 10) -> list[d
     ]
 
 
+def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int = 250) -> list[dict]:
+    events = (
+        _service()
+        .events()
+        .list(
+            calendarId=calendar_id,
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=max_results,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+        .get("items", [])
+    )
+    return [
+        {
+            "title": e.get("summary", "(no title)"),
+            "start": e["start"].get("dateTime", e["start"].get("date")),
+            "location": e.get("location"),
+        }
+        for e in events
+    ]
+
+
 def create_event(event_dict: dict) -> str:
     calendar_id = event_dict.get("calendar_id", "primary")
     body = {
