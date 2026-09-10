@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 import nlp_calendar as nlp
 import calendar_google
@@ -11,6 +13,9 @@ import calendar_outlook
 import contacts
 
 LISBON_TZ = ZoneInfo("Europe/Lisbon")
+
+_WEEK_GRID_COMPONENT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "week_grid_component", "frontend")
+_week_grid_component = components.declare_component("week_grid", path=_WEEK_GRID_COMPONENT_DIR)
 
 
 def fmt_dt(iso: str) -> str:
@@ -194,7 +199,8 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
                 else ""
             )
             blocks.append(
-                f"<div class='event' style='top:{top}px;height:{height}px;left:{left_pct}%;width:{width_pct}%;'>"
+                f"<div class='event' data-event-id='{ev['id']}' "
+                f"style='top:{top}px;height:{height}px;left:{left_pct}%;width:{width_pct}%;'>"
                 f"{time_html}<div class='ev-title'>{title}</div>{loc_html}</div>"
             )
         day_cols_html.append(f"<div class='day-col'>{''.join(blocks)}</div>")
@@ -214,7 +220,10 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
     )
     allday_cells = "".join(
         "<div class='allday-col'>"
-        + "".join(f"<div class='allday-ev'>{e['title']}</div>" for e in allday_by_day[d])
+        + "".join(
+            f"<div class='allday-ev' data-event-id='{e['id']}'>{e['title']}</div>"
+            for e in allday_by_day[d]
+        )
         + "</div>"
         for d in days
     )
@@ -301,7 +310,33 @@ def render_week_grid(calendars: list[dict]):
             allday_by_day[start.date()].append(ev)
 
     html = _build_week_html(days, timed_by_day, allday_by_day, today)
-    st.components.v1.html(html, height=(WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 70, scrolling=True)
+    grid_component_height = (WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 70
+    clicked = _week_grid_component(
+        html=html, height=grid_component_height, key=f"week_grid_{week_start.isoformat()}", default=None
+    )
+    # Mounting this component makes the browser auto-scroll the page down to
+    # reveal it — snap back to the top of the calendar view so it's not hidden.
+    components.html(
+        "<script>"
+        "for (var i = 0; i < 10; i++) {"
+        "  setTimeout(function(){"
+        "    try {"
+        "      var m = window.parent.document.querySelector('section.stMain');"
+        "      if (m) m.scrollTop = 0;"
+        "    } catch (e) { console.error('scroll-fix error', e); }"
+        "  }, i * 150);"
+        "}"
+        "</script>",
+        height=0,
+    )
+    if isinstance(clicked, dict):
+        nonce = clicked.get("nonce")
+        if nonce and nonce != st.session_state.get("cal_grid_last_nonce"):
+            st.session_state.cal_grid_last_nonce = nonce
+            matched = next((e for e in events if e["id"] == clicked.get("id")), None)
+            if matched:
+                st.session_state.cal_editing_event = matched
+                st.rerun()
 
     st.divider()
     st.markdown("**This week's events**")

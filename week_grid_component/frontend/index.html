@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<div id="root"></div>
+<script>
+(function () {
+  function post(payload) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, payload), "*");
+  }
+  function setFrameHeight() {
+    post({ type: "streamlit:setFrameHeight", height: document.documentElement.scrollHeight });
+  }
+  function sendValue(value) {
+    post({ type: "streamlit:setComponentValue", value: value, dataType: "json" });
+  }
+
+  var rendered = false;
+
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.type !== "streamlit:render") return;
+    rendered = true;
+    var args = data.args || {};
+    var root = document.getElementById("root");
+    root.innerHTML = args.html || "";
+    root.querySelectorAll("[data-event-id]").forEach(function (el) {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", function () {
+        sendValue({ id: el.getAttribute("data-event-id"), nonce: Date.now() + "-" + Math.random() });
+      });
+    });
+    // Report the known final height in one shot (rather than measuring the DOM
+    // after paint) — going 0 -> measured -> settled in separate steps triggers a
+    // much larger scroll-into-view jump than a single immediate resize.
+    post({ type: "streamlit:setFrameHeight", height: args.height || document.documentElement.scrollHeight });
+  });
+
+  // Streamlit's own registration of this iframe as a listener can lose the race
+  // with our first "ready" ping (message arrives before it's registered and is
+  // silently dropped) — retry until a render message actually comes back.
+  function announceReady() {
+    if (rendered) return;
+    post({ type: "streamlit:componentReady", apiVersion: 1 });
+    setTimeout(announceReady, 100);
+  }
+  announceReady();
+})();
+</script>
+</body>
+</html>
