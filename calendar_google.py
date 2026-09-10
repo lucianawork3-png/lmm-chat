@@ -87,6 +87,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
     )
     return [
         {
+            "id": e["id"],
             "title": e.get("summary", "(no title)"),
             "start": e["start"].get("dateTime", e["start"].get("date")),
             "end": e["end"].get("dateTime", e["end"].get("date")),
@@ -94,6 +95,27 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
         }
         for e in events
     ]
+
+
+def update_event(calendar_id: str, event_id: str, updates: dict) -> None:
+    body = {}
+    if "title" in updates:
+        body["summary"] = updates["title"]
+    if "start" in updates:
+        body["start"] = {"dateTime": updates["start"], "timeZone": "Europe/Lisbon"}
+    if "end" in updates:
+        body["end"] = {"dateTime": updates["end"], "timeZone": "Europe/Lisbon"}
+    if "location" in updates:
+        body["location"] = updates["location"]
+    _service().events().patch(
+        calendarId=calendar_id, eventId=event_id, body=body, sendUpdates="all"
+    ).execute()
+
+
+def delete_event(calendar_id: str, event_id: str) -> None:
+    _service().events().delete(
+        calendarId=calendar_id, eventId=event_id, sendUpdates="all"
+    ).execute()
 
 
 def create_event(event_dict: dict) -> str:

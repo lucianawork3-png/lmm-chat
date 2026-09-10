@@ -87,6 +87,8 @@ def load_range_events(calendars: list[dict], time_min: str, time_max: str) -> li
         try:
             for ev in fetch(cal["id"], time_min, time_max):
                 ev["_calendar_label"] = cal["label"]
+                ev["_provider"] = cal["provider"]
+                ev["_calendar_id"] = cal["id"]
                 events.append(ev)
         except Exception:
             pass
@@ -301,6 +303,83 @@ def render_week_grid(calendars: list[dict]):
     html = _build_week_html(days, timed_by_day, allday_by_day, today)
     st.components.v1.html(html, height=(WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 70, scrolling=True)
 
+    st.divider()
+    st.markdown("**This week's events**")
+    week_events = sorted(events, key=lambda e: e["start"])
+    if not week_events:
+        st.caption("No events this week.")
+    for ev in week_events:
+        dt = _parse_dt(ev["start"])
+        if dt is None:
+            continue
+        when = dt.strftime("%a %H:%M") if "T" in ev["start"] else f"{dt.strftime('%a')} (all day)"
+        label = f"{when} · {ev['title']}"
+        if st.button(label, key=f"cal_event_btn_{ev['id']}", use_container_width=True):
+            st.session_state.cal_editing_event = ev
+            st.rerun()
+
+    if st.session_state.get("cal_editing_event"):
+        render_event_editor(st.session_state.cal_editing_event)
+
+
+def render_event_editor(ev: dict):
+    st.divider()
+    st.markdown(f"**Edit event**")
+
+    start_dt = _parse_dt(ev["start"])
+    end_dt = _parse_dt(ev.get("end") or ev["start"]) or start_dt
+    is_all_day = "T" not in ev["start"]
+
+    new_title = st.text_input("Title", value=ev.get("title", ""), key="edit_ev_title")
+
+    new_start_dt, new_end_dt = start_dt, end_dt
+    if is_all_day:
+        st.caption("All-day event — editing its time isn't supported here yet, but you can still edit the title/location or delete it.")
+    else:
+        c1, c2 = st.columns(2)
+        new_start_date = c1.date_input("Start date", value=start_dt.date(), key="edit_ev_start_date")
+        new_start_time = c2.time_input("Start time", value=start_dt.time(), key="edit_ev_start_time")
+        c3, c4 = st.columns(2)
+        new_end_date = c3.date_input("End date", value=end_dt.date(), key="edit_ev_end_date")
+        new_end_time = c4.time_input("End time", value=end_dt.time(), key="edit_ev_end_time")
+        new_start_dt = datetime.combine(new_start_date, new_start_time)
+        new_end_dt = datetime.combine(new_end_date, new_end_time)
+
+    new_location = st.text_input("Location", value=ev.get("location") or "", key="edit_ev_location")
+
+    fetchers = {"google": (calendar_google.update_event, calendar_google.delete_event),
+                "outlook": (calendar_outlook.update_event, calendar_outlook.delete_event)}
+    update_fn, delete_fn = fetchers[ev["_provider"]]
+
+    col_save, col_delete, col_cancel = st.columns(3)
+    if col_save.button("💾 Save", key="edit_ev_save", type="primary"):
+        updates = {"title": new_title, "location": new_location}
+        if not is_all_day:
+            updates["start"] = new_start_dt.isoformat()
+            updates["end"] = new_end_dt.isoformat()
+        try:
+            update_fn(ev["_calendar_id"], ev["id"], updates)
+            load_range_events.clear()
+            st.session_state.cal_editing_event = None
+            st.success("Saved.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Couldn't save: {e}")
+
+    if col_delete.button("🗑️ Delete", key="edit_ev_delete"):
+        try:
+            delete_fn(ev["_calendar_id"], ev["id"])
+            load_range_events.clear()
+            st.session_state.cal_editing_event = None
+            st.success("Deleted.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Couldn't delete: {e}")
+
+    if col_cancel.button("✗ Cancel", key="edit_ev_cancel"):
+        st.session_state.cal_editing_event = None
+        st.rerun()
+
 
 def render():
     st.markdown("<style>section.stMain{overflow-anchor: none;}</style>", unsafe_allow_html=True)
@@ -309,6 +388,8 @@ def render():
         st.session_state.cal_messages = []
     if "cal_pending_event" not in st.session_state:
         st.session_state.cal_pending_event = None
+    if "cal_editing_event" not in st.session_state:
+        st.session_state.cal_editing_event = None
 
     with st.sidebar:
         st.title("📅 Calendar")

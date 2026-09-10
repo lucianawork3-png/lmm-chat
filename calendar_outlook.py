@@ -83,6 +83,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
     resp.raise_for_status()
     return [
         {
+            "id": e["id"],
             "title": e.get("subject", "(no title)"),
             "start": e["start"]["dateTime"],
             "end": e["end"]["dateTime"],
@@ -90,6 +91,25 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
         }
         for e in resp.json().get("value", [])
     ]
+
+
+def update_event(calendar_id: str, event_id: str, updates: dict) -> None:
+    body = {}
+    if "title" in updates:
+        body["subject"] = updates["title"]
+    if "start" in updates:
+        body["start"] = {"dateTime": updates["start"], "timeZone": "Europe/Lisbon"}
+    if "end" in updates:
+        body["end"] = {"dateTime": updates["end"], "timeZone": "Europe/Lisbon"}
+    if "location" in updates:
+        body["location"] = {"displayName": updates["location"]}
+    resp = requests.patch(f"{GRAPH_BASE}/me/events/{event_id}", headers=_headers(), json=body)
+    resp.raise_for_status()
+
+
+def delete_event(calendar_id: str, event_id: str) -> None:
+    resp = requests.delete(f"{GRAPH_BASE}/me/events/{event_id}", headers=_headers())
+    resp.raise_for_status()
 
 
 def create_event(event_dict: dict) -> str:
