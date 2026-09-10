@@ -13,7 +13,8 @@ st.set_page_config(page_title="LMM Chat", page_icon="📅", layout="centered")
 # ── Mode picker ──────────────────────────────────────────────────────────────
 
 if "mode" not in st.session_state:
-    st.session_state.mode = None
+    requested_mode = st.query_params.get("mode")
+    st.session_state.mode = requested_mode if requested_mode in ("calendar", "tasks") else None
 
 
 def show_picker():
