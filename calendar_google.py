@@ -100,8 +100,8 @@ def create_event(event_dict: dict) -> str:
     calendar_id = event_dict.get("calendar_id", "primary")
     body = {
         "summary": event_dict["title"],
-        "start": {"dateTime": event_dict["start"], "timeZone": "Europe/Amsterdam"},
-        "end": {"dateTime": event_dict["end"], "timeZone": "Europe/Amsterdam"},
+        "start": {"dateTime": event_dict["start"], "timeZone": "Europe/Lisbon"},
+        "end": {"dateTime": event_dict["end"], "timeZone": "Europe/Lisbon"},
     }
     if event_dict.get("location"):
         body["location"] = event_dict["location"]

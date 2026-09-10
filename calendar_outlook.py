@@ -101,8 +101,8 @@ def create_event(event_dict: dict) -> str:
     )
     body = {
         "subject": event_dict["title"],
-        "start": {"dateTime": event_dict["start"], "timeZone": "Europe/Amsterdam"},
-        "end": {"dateTime": event_dict["end"], "timeZone": "Europe/Amsterdam"},
+        "start": {"dateTime": event_dict["start"], "timeZone": "Europe/Lisbon"},
+        "end": {"dateTime": event_dict["end"], "timeZone": "Europe/Lisbon"},
     }
     if event_dict.get("location"):
         body["location"] = {"displayName": event_dict["location"]}

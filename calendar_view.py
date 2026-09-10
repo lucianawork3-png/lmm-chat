@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -8,6 +9,8 @@ import nlp_calendar as nlp
 import calendar_google
 import calendar_outlook
 import contacts
+
+LISBON_TZ = ZoneInfo("Europe/Lisbon")
 
 
 def fmt_dt(iso: str) -> str:
@@ -97,7 +100,7 @@ def render_agenda(events: list[dict]):
         st.caption("Nothing on the calendar.")
         return
 
-    today = datetime.now().date()
+    today = datetime.now(LISBON_TZ).date()
     grouped: dict = {}
     for ev in events:
         try:
@@ -250,7 +253,7 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
 def render_week_grid(calendars: list[dict]):
     st.subheader("🗓️ Week")
 
-    today = datetime.now().date()
+    today = datetime.now(LISBON_TZ).date()
     if "cal_week_cursor" not in st.session_state:
         diff = (today.weekday() + 1) % 7  # days since last Sunday
         st.session_state.cal_week_cursor = today - timedelta(days=diff)

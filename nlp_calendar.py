@@ -1,7 +1,10 @@
 import json
 import os
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import anthropic
+
+LISBON_TZ = ZoneInfo("Europe/Lisbon")
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
@@ -9,7 +12,7 @@ SYSTEM_PROMPT = """You are a calendar assistant. Parse the user's message into a
 
 Return ONLY a valid JSON object with these keys:
 - title (string, required)
-- start (ISO8601 datetime string, required, assume CET/Amsterdam timezone)
+- start (ISO8601 datetime string, required, assume WET/Lisbon timezone)
 - end (ISO8601 datetime string, required — default to 1 hour after start if not specified)
 - location (string or null)
 - description (string or null)
@@ -26,7 +29,8 @@ def parse_event(user_message: str, calendars: list[dict]) -> dict:
     calendar_list = "\n".join(
         f"- {c['id']}: {c['label']} ({c['provider']})" for c in calendars
     )
-    today = date.today().isoformat()
+    today_date = datetime.now(LISBON_TZ).date()
+    today = f"{today_date.isoformat()} ({today_date.strftime('%A')})"
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
@@ -35,7 +39,7 @@ def parse_event(user_message: str, calendars: list[dict]) -> dict:
         messages=[
             {
                 "role": "user",
-                "content": f"Today is {today} (Friday). Available calendars:\n{calendar_list}\n\nMessage: {user_message}",
+                "content": f"Today is {today}. Available calendars:\n{calendar_list}\n\nMessage: {user_message}",
             }
         ],
     )
