@@ -11,6 +11,7 @@ import nlp_calendar as nlp
 import calendar_google
 import calendar_outlook
 import contacts
+import cycle
 
 LISBON_TZ = ZoneInfo("Europe/Lisbon")
 
@@ -101,7 +102,7 @@ def load_range_events(calendars: list[dict], time_min: str, time_max: str) -> li
     return events
 
 
-def render_agenda(events: list[dict]):
+def render_agenda(events: list[dict], cycle_stats: dict):
     st.subheader("📅 Upcoming")
     if not events:
         st.caption("Nothing on the calendar.")
@@ -124,6 +125,7 @@ def render_agenda(events: list[dict]):
         else:
             label = day.strftime("%a %d %b")
         st.markdown(f"**{label}**")
+        st.caption(cycle.day_summary(day, cycle_stats))
         for dt, ev in sorted(grouped[day], key=lambda x: x[0]):
             time_str = dt.strftime("%H:%M") if "T" in ev["start"] else "All day"
             loc = f" — {ev['location']}" if ev.get("location") else ""
@@ -171,7 +173,7 @@ def _layout_day_columns(day_events: list[dict]):
     return placements, total_cols
 
 
-def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today) -> str:
+def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today, cycle_stats: dict) -> str:
     grid_height = (WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX
 
     def time_to_top(dt: datetime) -> float:
@@ -214,8 +216,12 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
         for h in range(WEEK_START_HOUR, WEEK_END_HOUR + 1)
     )
     header_cells = "".join(
-        f"<div class='day-header{' today' if d == today else ''}'>"
-        f"<div class='dn'>{d.strftime('%a')}</div><div class='dd'>{d.strftime('%d')}</div></div>"
+        (lambda badge: (
+            f"<div class='day-header{' today' if d == today else ''}'>"
+            f"<div class='dn'>{d.strftime('%a')}</div><div class='dd'>{d.strftime('%d')}</div>"
+            f"<div class='cycle-badge' style='background:{badge['color']}' title=\"{badge['tooltip']}\">{badge['emoji']}</div>"
+            f"</div>"
+        ))(cycle.day_badge(d, cycle_stats))
         for d in days
     )
     allday_cells = "".join(
@@ -239,6 +245,7 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
       .day-header.today .dd {{ background: #1a73e8; color: white; border-radius: 50%; display: inline-block; width: 22px; height: 22px; line-height: 22px; }}
       .dn {{ color: #888; font-size: 11px; text-transform: uppercase; }}
       .dd {{ font-size: 15px; font-weight: 600; }}
+      .cycle-badge {{ display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; font-size: 10px; line-height: 16px; margin-top: 2px; }}
       .allday-row {{ display: flex; border-bottom: 1px solid #eee; min-height: 22px; }}
       .allday-col {{ flex: 1; border-left: 1px solid #f0f0f0; padding: 2px; }}
       .allday-ev {{ background: #e4f6ea; border: 1px solid #34a853; border-radius: 4px; font-size: 11px; padding: 1px 4px; margin-bottom: 2px; }}
@@ -268,7 +275,7 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
     """
 
 
-def render_week_grid(calendars: list[dict]):
+def render_week_grid(calendars: list[dict], cycle_stats: dict):
     st.subheader("🗓️ Week")
 
     today = datetime.now(LISBON_TZ).date()
@@ -309,8 +316,8 @@ def render_week_grid(calendars: list[dict]):
         else:
             allday_by_day[start.date()].append(ev)
 
-    html = _build_week_html(days, timed_by_day, allday_by_day, today)
-    grid_component_height = (WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 70
+    html = _build_week_html(days, timed_by_day, allday_by_day, today, cycle_stats)
+    grid_component_height = (WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 84
     clicked = _week_grid_component(
         html=html, height=grid_component_height, key=f"week_grid_{week_start.isoformat()}", default=None
     )
@@ -429,6 +436,40 @@ def render_event_editor(ev: dict):
         st.rerun()
 
 
+def render_cycle_sidebar():
+    st.subheader("🌙 Cycle")
+
+    try:
+        starts = cycle.list_period_starts()
+        stats = cycle.cycle_stats(starts)
+    except Exception as e:
+        st.warning(f"Couldn't load cycle data: {e}")
+        stats = cycle.cycle_stats([])
+
+    today = datetime.now(LISBON_TZ).date()
+    moon_today = cycle.moon_phase_for_day(today)
+    st.caption(f"{moon_today['emoji']} {moon_today['name']} — {moon_today['energy']}")
+
+    phase_today = cycle.phase_for_day(today, stats)
+    if phase_today:
+        st.caption(
+            f"Day {phase_today['cycle_day']} of ~{phase_today['cycle_length']} · "
+            f"{phase_today['phase']} — {phase_today['energy']}"
+        )
+    else:
+        st.caption("Log your last period start to see your cycle phase.")
+
+    with st.expander("Log period start"):
+        log_date = st.date_input("Start date", value=today, key="cycle_log_date")
+        if st.button("Log it", key="cycle_log_btn"):
+            try:
+                cycle.log_period_start(log_date)
+                st.success("Logged.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Couldn't log: {e}")
+
+
 def render():
     st.markdown("<style>section.stMain{overflow-anchor: none;}</style>", unsafe_allow_html=True)
 
@@ -456,10 +497,18 @@ def render():
             st.error("No calendars loaded. Check credentials in .env")
 
         st.divider()
+        render_cycle_sidebar()
+
+        st.divider()
         if st.button("Clear chat", key="cal_clear"):
             st.session_state.cal_messages = []
             st.session_state.cal_pending_event = None
             st.rerun()
+
+    try:
+        cycle_stats = cycle.cycle_stats(cycle.list_period_starts())
+    except Exception:
+        cycle_stats = cycle.cycle_stats([])
 
     if calendars:
         if st.session_state.get("cal_view_mode") not in ("List", "Week"):
@@ -479,9 +528,9 @@ def render():
             st.rerun()
 
         if st.session_state.cal_view_mode == "List":
-            render_agenda(load_upcoming_events(calendars))
+            render_agenda(load_upcoming_events(calendars), cycle_stats)
         else:
-            render_week_grid(calendars)
+            render_week_grid(calendars, cycle_stats)
 
     for msg in st.session_state.cal_messages:
         with st.chat_message(msg["role"]):
