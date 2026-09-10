@@ -182,11 +182,18 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
             width_pct = 100 / total_cols
             left_pct = col * width_pct
             title = (ev.get("title") or "").replace("<", "&lt;")
-            loc = f"<div class='ev-loc'>{ev['location']}</div>" if ev.get("location") else ""
+
+            # Only include lines that actually fit the block's height, so text never gets
+            # clipped mid-word — drop location first, then the time label, for short events.
+            time_html = f"<div class='ev-time'>{start.strftime('%H:%M')}</div>" if height >= 26 else ""
+            loc_html = (
+                f"<div class='ev-loc'>{ev['location']}</div>"
+                if height >= 46 and ev.get("location")
+                else ""
+            )
             blocks.append(
                 f"<div class='event' style='top:{top}px;height:{height}px;left:{left_pct}%;width:{width_pct}%;'>"
-                f"<div class='ev-time'>{start.strftime('%H:%M')}</div>"
-                f"<div class='ev-title'>{title}</div>{loc}</div>"
+                f"{time_html}<div class='ev-title'>{title}</div>{loc_html}</div>"
             )
         day_cols_html.append(f"<div class='day-col'>{''.join(blocks)}</div>")
 
@@ -231,10 +238,10 @@ def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today)
       .gridlines-overlay {{ position: absolute; inset: 0; pointer-events: none; z-index: 0; }}
       .gridline {{ position: absolute; left: 0; right: 0; border-top: 1px solid #f2f2f2; }}
       .day-col {{ flex: 1; position: relative; border-left: 1px solid #f0f0f0; z-index: 1; }}
-      .event {{ position: absolute; background: #e4f6ea; border-left: 3px solid #34a853; border-radius: 4px; padding: 2px 4px; overflow: hidden; font-size: 11px; z-index: 2; }}
-      .ev-time {{ color: #1e7e3c; font-size: 10px; }}
-      .ev-title {{ font-weight: 600; color: #1a3d1f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-      .ev-loc {{ font-size: 10px; color: #4d7a58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+      .event {{ position: absolute; background: #e4f6ea; border-left: 3px solid #34a853; border-radius: 4px; padding: 1px 4px; overflow: hidden; font-size: 11px; line-height: 1.15; z-index: 2; }}
+      .ev-time {{ color: #1e7e3c; font-size: 10px; line-height: 1.15; }}
+      .ev-title {{ font-weight: 600; color: #1a3d1f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }}
+      .ev-loc {{ font-size: 10px; color: #4d7a58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; }}
     </style>
     <div class="cal">
       <div class="header-row"><div class="time-gutter"></div>{header_cells}</div>
