@@ -77,7 +77,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
         "$top": max_results,
         "$orderby": "start/dateTime",
         "$filter": f"start/dateTime ge '{time_min}' and start/dateTime le '{time_max}'",
-        "$select": "subject,start,end,location",
+        "$select": "subject,start,end,location,isReminderOn,reminderMinutesBeforeStart",
     }
     resp = requests.get(url, headers=_headers(), params=params)
     resp.raise_for_status()
@@ -88,6 +88,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
             "start": e["start"]["dateTime"],
             "end": e["end"]["dateTime"],
             "location": e.get("location", {}).get("displayName"),
+            "reminder_minutes": e.get("reminderMinutesBeforeStart") if e.get("isReminderOn") else None,
         }
         for e in resp.json().get("value", [])
     ]
@@ -103,6 +104,13 @@ def update_event(calendar_id: str, event_id: str, updates: dict) -> None:
         body["end"] = {"dateTime": updates["end"], "timeZone": "Europe/Lisbon"}
     if "location" in updates:
         body["location"] = {"displayName": updates["location"]}
+    if "reminder_minutes" in updates:
+        minutes = updates["reminder_minutes"]
+        if minutes is None:
+            body["isReminderOn"] = False
+        else:
+            body["isReminderOn"] = True
+            body["reminderMinutesBeforeStart"] = minutes
     resp = requests.patch(f"{GRAPH_BASE}/me/events/{event_id}", headers=_headers(), json=body)
     resp.raise_for_status()
 

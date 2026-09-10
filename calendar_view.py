@@ -382,13 +382,26 @@ def render_event_editor(ev: dict):
 
     new_location = st.text_input("Location", value=ev.get("location") or "", key="edit_ev_location")
 
+    current_reminder = ev.get("reminder_minutes")
+    remind_col, minutes_col = st.columns([1, 1])
+    remind_on = remind_col.checkbox("🔔 Notify me before this event", value=current_reminder is not None, key="edit_ev_remind_on")
+    reminder_minutes = minutes_col.number_input(
+        "Minutes before", min_value=1, max_value=1440, step=5,
+        value=current_reminder if current_reminder is not None else 30,
+        key="edit_ev_remind_minutes", disabled=not remind_on,
+    )
+
     fetchers = {"google": (calendar_google.update_event, calendar_google.delete_event),
                 "outlook": (calendar_outlook.update_event, calendar_outlook.delete_event)}
     update_fn, delete_fn = fetchers[ev["_provider"]]
 
     col_save, col_delete, col_cancel = st.columns(3)
     if col_save.button("💾 Save", key="edit_ev_save", type="primary"):
-        updates = {"title": new_title, "location": new_location}
+        updates = {
+            "title": new_title,
+            "location": new_location,
+            "reminder_minutes": int(reminder_minutes) if remind_on else None,
+        }
         if not is_all_day:
             updates["start"] = new_start_dt.isoformat()
             updates["end"] = new_end_dt.isoformat()

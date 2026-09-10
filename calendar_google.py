@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -70,6 +72,16 @@ def list_upcoming(calendar_id: str = "primary", max_results: int = 10) -> list[d
     ]
 
 
+def _extract_reminder_minutes(e: dict) -> int | None:
+    reminders = e.get("reminders") or {}
+    if reminders.get("useDefault"):
+        return None
+    for o in reminders.get("overrides", []):
+        if o.get("method") == "popup":
+            return o.get("minutes")
+    return None
+
+
 def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int = 250) -> list[dict]:
     events = (
         _service()
@@ -92,6 +104,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
             "start": e["start"].get("dateTime", e["start"].get("date")),
             "end": e["end"].get("dateTime", e["end"].get("date")),
             "location": e.get("location"),
+            "reminder_minutes": _extract_reminder_minutes(e),
         }
         for e in events
     ]
@@ -107,6 +120,12 @@ def update_event(calendar_id: str, event_id: str, updates: dict) -> None:
         body["end"] = {"dateTime": updates["end"], "timeZone": "Europe/Lisbon"}
     if "location" in updates:
         body["location"] = updates["location"]
+    if "reminder_minutes" in updates:
+        minutes = updates["reminder_minutes"]
+        if minutes is None:
+            body["reminders"] = {"useDefault": False, "overrides": []}
+        else:
+            body["reminders"] = {"useDefault": False, "overrides": [{"method": "popup", "minutes": minutes}]}
     _service().events().patch(
         calendarId=calendar_id, eventId=event_id, body=body, sendUpdates="all"
     ).execute()
