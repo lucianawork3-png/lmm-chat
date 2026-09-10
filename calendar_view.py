@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import calendar as calendar_module
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
@@ -35,7 +34,7 @@ def add_event_to_calendar(ev: dict):
             + (f" [Open event]({link})" if link else "")
         )
         load_upcoming_events.clear()
-        load_month_events.clear()
+        load_range_events.clear()
     except Exception as e:
         push_assistant(f"Error adding event: {e}")
     st.rerun()
@@ -74,18 +73,8 @@ def load_upcoming_events(calendars: list[dict], max_per_calendar: int = 15) -> l
     return events
 
 
-def _month_bounds(year: int, month: int) -> tuple[str, str]:
-    start = datetime(year, month, 1, tzinfo=timezone.utc) - timedelta(days=1)
-    if month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=timezone.utc) + timedelta(days=1)
-    else:
-        end = datetime(year, month + 1, 1, tzinfo=timezone.utc) + timedelta(days=1)
-    return start.isoformat().replace("+00:00", "Z"), end.isoformat().replace("+00:00", "Z")
-
-
 @st.cache_data(ttl=60)
-def load_month_events(calendars: list[dict], year: int, month: int) -> list[dict]:
-    time_min, time_max = _month_bounds(year, month)
+def load_range_events(calendars: list[dict], time_min: str, time_max: str) -> list[dict]:
     fetchers = {"google": calendar_google.list_range, "outlook": calendar_outlook.list_range}
     events = []
     for cal in calendars:
@@ -132,75 +121,180 @@ def render_agenda(events: list[dict]):
     st.divider()
 
 
-def render_month_grid(calendars: list[dict]):
-    st.subheader("📅 Month")
+WEEK_START_HOUR = 7
+WEEK_END_HOUR = 20
+HOUR_PX = 38
+
+
+def _parse_dt(iso: str):
+    try:
+        return datetime.fromisoformat(iso)
+    except Exception:
+        return None
+
+
+def _layout_day_columns(day_events: list[dict]):
+    """Assign each timed event a column so overlapping events sit side-by-side."""
+    dated = []
+    for ev in day_events:
+        start = _parse_dt(ev["start"])
+        end = _parse_dt(ev.get("end") or ev["start"])
+        if start is None:
+            continue
+        dated.append((ev, start, end or start))
+    dated.sort(key=lambda x: x[1])
+
+    col_end_times: list[datetime] = []
+    placements = []
+    for ev, start, end in dated:
+        placed = False
+        for i, col_end in enumerate(col_end_times):
+            if start >= col_end:
+                col_end_times[i] = end
+                placements.append((ev, start, end, i))
+                placed = True
+                break
+        if not placed:
+            col_end_times.append(end)
+            placements.append((ev, start, end, len(col_end_times) - 1))
+    total_cols = max(len(col_end_times), 1)
+    return placements, total_cols
+
+
+def _build_week_html(days: list, timed_by_day: dict, allday_by_day: dict, today) -> str:
+    grid_height = (WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX
+
+    def time_to_top(dt: datetime) -> float:
+        minutes = (dt.hour - WEEK_START_HOUR) * 60 + dt.minute
+        return max(0.0, minutes) / 60 * HOUR_PX
+
+    day_cols_html = []
+    for d in days:
+        placements, total_cols = _layout_day_columns(timed_by_day[d])
+        blocks = []
+        for ev, start, end, col in placements:
+            top = time_to_top(start)
+            bottom = time_to_top(end) if end > start else top + HOUR_PX / 2
+            height = max(bottom - top, 20)
+            width_pct = 100 / total_cols
+            left_pct = col * width_pct
+            title = (ev.get("title") or "").replace("<", "&lt;")
+            loc = f"<div class='ev-loc'>{ev['location']}</div>" if ev.get("location") else ""
+            blocks.append(
+                f"<div class='event' style='top:{top}px;height:{height}px;left:{left_pct}%;width:{width_pct}%;'>"
+                f"<div class='ev-time'>{start.strftime('%H:%M')}</div>"
+                f"<div class='ev-title'>{title}</div>{loc}</div>"
+            )
+        day_cols_html.append(f"<div class='day-col'>{''.join(blocks)}</div>")
+
+    hour_labels_html = "".join(
+        f"<div class='hour-row' style='top:{(h - WEEK_START_HOUR) * HOUR_PX}px'>{h:02d}:00</div>"
+        for h in range(WEEK_START_HOUR, WEEK_END_HOUR + 1)
+    )
+    gridlines_html = "".join(
+        f"<div class='gridline' style='top:{(h - WEEK_START_HOUR) * HOUR_PX}px'></div>"
+        for h in range(WEEK_START_HOUR, WEEK_END_HOUR + 1)
+    )
+    header_cells = "".join(
+        f"<div class='day-header{' today' if d == today else ''}'>"
+        f"<div class='dn'>{d.strftime('%a')}</div><div class='dd'>{d.strftime('%d')}</div></div>"
+        for d in days
+    )
+    allday_cells = "".join(
+        "<div class='allday-col'>"
+        + "".join(f"<div class='allday-ev'>{e['title']}</div>" for e in allday_by_day[d])
+        + "</div>"
+        for d in days
+    )
+
+    return f"""
+    <style>
+      * {{ box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }}
+      body {{ margin: 0; }}
+      .cal {{ display: flex; flex-direction: column; }}
+      .header-row {{ display: flex; border-bottom: 1px solid #e0e0e0; }}
+      .time-gutter {{ width: 52px; flex-shrink: 0; }}
+      .day-header {{ flex: 1; text-align: center; padding: 6px 2px; font-size: 13px; color: #333; border-left: 1px solid #eee; }}
+      .day-header.today .dd {{ background: #1a73e8; color: white; border-radius: 50%; display: inline-block; width: 22px; height: 22px; line-height: 22px; }}
+      .dn {{ color: #888; font-size: 11px; text-transform: uppercase; }}
+      .dd {{ font-size: 15px; font-weight: 600; }}
+      .allday-row {{ display: flex; border-bottom: 1px solid #eee; min-height: 22px; }}
+      .allday-col {{ flex: 1; border-left: 1px solid #f0f0f0; padding: 2px; }}
+      .allday-ev {{ background: #e4f6ea; border: 1px solid #34a853; border-radius: 4px; font-size: 11px; padding: 1px 4px; margin-bottom: 2px; }}
+      .body-row {{ display: flex; }}
+      .hours-col {{ width: 52px; flex-shrink: 0; position: relative; height: {grid_height}px; }}
+      .hour-row {{ position: absolute; right: 6px; transform: translateY(-6px); font-size: 10px; color: #999; }}
+      .days-grid {{ flex: 1; display: flex; position: relative; height: {grid_height}px; }}
+      .gridlines-overlay {{ position: absolute; inset: 0; pointer-events: none; z-index: 0; }}
+      .gridline {{ position: absolute; left: 0; right: 0; border-top: 1px solid #f2f2f2; }}
+      .day-col {{ flex: 1; position: relative; border-left: 1px solid #f0f0f0; z-index: 1; }}
+      .event {{ position: absolute; background: #e4f6ea; border-left: 3px solid #34a853; border-radius: 4px; padding: 2px 4px; overflow: hidden; font-size: 11px; z-index: 2; }}
+      .ev-time {{ color: #1e7e3c; font-size: 10px; }}
+      .ev-title {{ font-weight: 600; color: #1a3d1f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+      .ev-loc {{ font-size: 10px; color: #4d7a58; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+    </style>
+    <div class="cal">
+      <div class="header-row"><div class="time-gutter"></div>{header_cells}</div>
+      <div class="allday-row"><div class="time-gutter"></div>{allday_cells}</div>
+      <div class="body-row">
+        <div class="hours-col">{hour_labels_html}</div>
+        <div class="days-grid">
+          <div class="gridlines-overlay">{gridlines_html}</div>
+          {''.join(day_cols_html)}
+        </div>
+      </div>
+    </div>
+    """
+
+
+def render_week_grid(calendars: list[dict]):
+    st.subheader("🗓️ Week")
 
     today = datetime.now().date()
-    if "cal_month_cursor" not in st.session_state:
-        st.session_state.cal_month_cursor = today.replace(day=1)
-    if "cal_selected_day" not in st.session_state:
-        st.session_state.cal_selected_day = today
+    if "cal_week_cursor" not in st.session_state:
+        diff = (today.weekday() + 1) % 7  # days since last Sunday
+        st.session_state.cal_week_cursor = today - timedelta(days=diff)
 
-    cursor = st.session_state.cal_month_cursor
+    week_start = st.session_state.cal_week_cursor
+    week_end = week_start + timedelta(days=6)
 
-    nav_prev, nav_label, nav_next = st.columns([1, 3, 1])
-    if nav_prev.button("◀", key="cal_month_prev", use_container_width=True):
-        prev_month = 12 if cursor.month == 1 else cursor.month - 1
-        prev_year = cursor.year - 1 if cursor.month == 1 else cursor.year
-        st.session_state.cal_month_cursor = cursor.replace(year=prev_year, month=prev_month, day=1)
+    nav_prev, nav_label, nav_next = st.columns([1, 4, 1])
+    if nav_prev.button("◀", key="cal_week_prev", use_container_width=True):
+        st.session_state.cal_week_cursor = week_start - timedelta(days=7)
         st.rerun()
-    nav_label.markdown(f"<div style='text-align:center;font-weight:600'>{cursor.strftime('%B %Y')}</div>", unsafe_allow_html=True)
-    if nav_next.button("▶", key="cal_month_next", use_container_width=True):
-        next_month = 1 if cursor.month == 12 else cursor.month + 1
-        next_year = cursor.year + 1 if cursor.month == 12 else cursor.year
-        st.session_state.cal_month_cursor = cursor.replace(year=next_year, month=next_month, day=1)
+    nav_label.markdown(
+        f"<div style='text-align:center;font-weight:600'>{week_start.strftime('%d %b')} – {week_end.strftime('%d %b %Y')}</div>",
+        unsafe_allow_html=True,
+    )
+    if nav_next.button("▶", key="cal_week_next", use_container_width=True):
+        st.session_state.cal_week_cursor = week_start + timedelta(days=7)
         st.rerun()
 
-    events = load_month_events(calendars, cursor.year, cursor.month)
-    events_by_day: dict = {}
+    time_min = datetime.combine(week_start, datetime.min.time(), tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    time_max = (
+        datetime.combine(week_end, datetime.min.time(), tzinfo=timezone.utc) + timedelta(days=1)
+    ).isoformat().replace("+00:00", "Z")
+    events = load_range_events(calendars, time_min, time_max)
+
+    days = [week_start + timedelta(days=i) for i in range(7)]
+    timed_by_day: dict = {d: [] for d in days}
+    allday_by_day: dict = {d: [] for d in days}
     for ev in events:
-        try:
-            dt = datetime.fromisoformat(ev["start"])
-        except Exception:
+        start = _parse_dt(ev["start"])
+        if start is None or start.date() not in timed_by_day:
             continue
-        events_by_day.setdefault(dt.date(), []).append(ev)
+        if "T" in ev["start"]:
+            timed_by_day[start.date()].append(ev)
+        else:
+            allday_by_day[start.date()].append(ev)
 
-    header_cols = st.columns(7)
-    for col, name in zip(header_cols, ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]):
-        col.markdown(f"<div style='text-align:center;color:#888;font-size:0.75em'>{name}</div>", unsafe_allow_html=True)
-
-    for week in calendar_module.Calendar(firstweekday=0).monthdatescalendar(cursor.year, cursor.month):
-        cols = st.columns(7)
-        for col, day in zip(cols, week):
-            if day.month != cursor.month:
-                col.markdown("&nbsp;", unsafe_allow_html=True)
-                continue
-            count = len(events_by_day.get(day, []))
-            label = f"{day.day} •" if count else str(day.day)
-            btn_type = "primary" if day == st.session_state.cal_selected_day else "secondary"
-            if col.button(label, key=f"cal_day_{day.isoformat()}", type=btn_type, use_container_width=True):
-                st.session_state.cal_selected_day = day
-                st.rerun()
-
-    st.divider()
-    selected = st.session_state.cal_selected_day
-    selected_label = "Today" if selected == today else selected.strftime("%a %d %b")
-    st.markdown(f"**{selected_label}**")
-    day_events = sorted(events_by_day.get(selected, []), key=lambda e: e["start"])
-    if not day_events:
-        st.caption("No events.")
-    for ev in day_events:
-        try:
-            dt = datetime.fromisoformat(ev["start"])
-            time_str = dt.strftime("%H:%M") if "T" in ev["start"] else "All day"
-        except Exception:
-            time_str = ""
-        loc = f" — {ev['location']}" if ev.get("location") else ""
-        st.markdown(f"- {time_str} · {ev['title']}{loc}")
-    st.divider()
+    html = _build_week_html(days, timed_by_day, allday_by_day, today)
+    st.components.v1.html(html, height=(WEEK_END_HOUR - WEEK_START_HOUR) * HOUR_PX + 70, scrolling=True)
 
 
 def render():
+    st.markdown("<style>section.stMain{overflow-anchor: none;}</style>", unsafe_allow_html=True)
+
     if "cal_messages" not in st.session_state:
         st.session_state.cal_messages = []
     if "cal_pending_event" not in st.session_state:
@@ -229,13 +323,26 @@ def render():
             st.rerun()
 
     if calendars:
-        view_mode = st.radio(
-            "View", ["List", "Month"], horizontal=True, key="cal_view_mode", label_visibility="collapsed"
-        )
-        if view_mode == "List":
+        if st.session_state.get("cal_view_mode") not in ("List", "Week"):
+            st.session_state.cal_view_mode = "List"
+        toggle_list, toggle_week = st.columns(2)
+        if toggle_list.button(
+            "List", key="cal_view_list_btn", use_container_width=True,
+            type="primary" if st.session_state.cal_view_mode == "List" else "secondary",
+        ):
+            st.session_state.cal_view_mode = "List"
+            st.rerun()
+        if toggle_week.button(
+            "Week", key="cal_view_week_btn", use_container_width=True,
+            type="primary" if st.session_state.cal_view_mode == "Week" else "secondary",
+        ):
+            st.session_state.cal_view_mode = "Week"
+            st.rerun()
+
+        if st.session_state.cal_view_mode == "List":
             render_agenda(load_upcoming_events(calendars))
         else:
-            render_month_grid(calendars)
+            render_week_grid(calendars)
 
     for msg in st.session_state.cal_messages:
         with st.chat_message(msg["role"]):

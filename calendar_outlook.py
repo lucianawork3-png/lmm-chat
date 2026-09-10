@@ -85,6 +85,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
         {
             "title": e.get("subject", "(no title)"),
             "start": e["start"]["dateTime"],
+            "end": e["end"]["dateTime"],
             "location": e.get("location", {}).get("displayName"),
         }
         for e in resp.json().get("value", [])

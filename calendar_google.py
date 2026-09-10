@@ -89,6 +89,7 @@ def list_range(calendar_id: str, time_min: str, time_max: str, max_results: int 
         {
             "title": e.get("summary", "(no title)"),
             "start": e["start"].get("dateTime", e["start"].get("date")),
+            "end": e["end"].get("dateTime", e["end"].get("date")),
             "location": e.get("location"),
         }
         for e in events
