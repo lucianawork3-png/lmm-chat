@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import streamlit as st
 
@@ -33,6 +33,7 @@ def add_event_to_calendar(ev: dict):
             f"Done! **{ev['title']}** added to {ev['_calendar_label']}."
             + (f" [Open event]({link})" if link else "")
         )
+        load_upcoming_events.clear()
     except Exception as e:
         push_assistant(f"Error adding event: {e}")
     st.rerun()
@@ -51,6 +52,54 @@ def load_all_calendars():
     except Exception as e:
         errors.append(f"Outlook: {e}")
     return cals, errors
+
+
+@st.cache_data(ttl=60)
+def load_upcoming_events(calendars: list[dict], max_per_calendar: int = 15) -> list[dict]:
+    fetchers = {"google": calendar_google.list_upcoming, "outlook": calendar_outlook.list_upcoming}
+    events = []
+    for cal in calendars:
+        fetch = fetchers.get(cal["provider"])
+        if not fetch:
+            continue
+        try:
+            for ev in fetch(cal["id"], max_results=max_per_calendar):
+                ev["_calendar_label"] = cal["label"]
+                events.append(ev)
+        except Exception:
+            pass
+    events.sort(key=lambda e: e["start"])
+    return events
+
+
+def render_agenda(events: list[dict]):
+    st.subheader("📅 Upcoming")
+    if not events:
+        st.caption("Nothing on the calendar.")
+        return
+
+    today = datetime.now().date()
+    grouped: dict = {}
+    for ev in events:
+        try:
+            dt = datetime.fromisoformat(ev["start"])
+        except Exception:
+            continue
+        grouped.setdefault(dt.date(), []).append((dt, ev))
+
+    for day in sorted(grouped):
+        if day == today:
+            label = "Today"
+        elif day == today + timedelta(days=1):
+            label = "Tomorrow"
+        else:
+            label = day.strftime("%a %d %b")
+        st.markdown(f"**{label}**")
+        for dt, ev in sorted(grouped[day], key=lambda x: x[0]):
+            time_str = dt.strftime("%H:%M") if "T" in ev["start"] else "All day"
+            loc = f" — {ev['location']}" if ev.get("location") else ""
+            st.markdown(f"- {time_str} · {ev['title']}{loc}")
+    st.divider()
 
 
 def render():
@@ -80,6 +129,9 @@ def render():
             st.session_state.cal_messages = []
             st.session_state.cal_pending_event = None
             st.rerun()
+
+    if calendars:
+        render_agenda(load_upcoming_events(calendars))
 
     for msg in st.session_state.cal_messages:
         with st.chat_message(msg["role"]):
